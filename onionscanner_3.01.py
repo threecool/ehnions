@@ -160,8 +160,8 @@ def onion_scan():
                 print(data_onionscan)
                 dbcursor.execute(add_onionscan, data_onionscan)
                 dbconnection.commit()
-                dbcursor.close()
-                dbconnection.close()
+        dbcursor.close()
+        dbconnection.close()
 
 
 def parsePage(url):

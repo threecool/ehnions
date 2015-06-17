@@ -2,8 +2,10 @@ import sys
 import getopt
 import re
 import hashlib
-import urllib2
-from requests.auth import HTTPBasicAuth  # apt-get install python-requests
+# in python3 urllib2 is divided into 2 different libs
+# import urllib2
+# from requests.auth import HTTPBasicAuth  # apt-get install python-requests
+import requests
 import MySQLdb  # apt-get install python-MySQLdb
 import socket
 import socks  # socksipy
@@ -49,14 +51,16 @@ def fetch_hs(addr):
         # opener = urllib.request.build_opener(handler)
         # urllib._urlopener = opener
         print('Trying to retrieve address')
-        response = urllib2.urlopen(addr)  # , urlencode({'user': 'user', 'password':'pass'})
+        response = requests.get(addr)  # urllib2.urlopen(addr)  # , urlencode({'user': 'user', 'password':'pass'})
+        print(response.request.headers)
+        print(response.headers)
         print('Opened URL')
-        print(response.info())
-        document = response.read()
-
-        print(document)
+        document = response.content
+        # print(response.content)
+        # print(document)
         return document
-    except:
+    except Exception as e:
+        print(e)
         print("cannot reach address\n")
         print("----------------------")
         return "unreachable"
@@ -79,7 +83,7 @@ def load_onions(inputfile):
     try:
         print('Connecting to DB')
         sslopts = {'cert': '/opt/mysql/newcerts/client-cert.pem', 'key': '/opt/mysql/newcerts/client-key.pem'}
-        dbconnection = MySQLdb.connect(user='mysql', passwd='jk3mADFL%#@3', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
+        dbconnection = MySQLdb.connect(user='mysql', passwd='TOPKEK', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
     except MySQLdb.Error as err:
         print(err)
     else:
@@ -107,11 +111,10 @@ def onion_scan():
     add_onionscan = """INSERT INTO tblOnionScan
                                     (onion_addr, working, contents,title,sha1_hash)
                                     VALUES(%s, %s, %s,%s,%s)"""
-
     try:
         print('Connecting to DB')
         sslopts = {'cert': '/opt/mysql/newcerts/client-cert.pem', 'key': '/opt/mysql/newcerts/client-key.pem'}
-        dbconnection = MySQLdb.connect(user='mysql', passwd='jk3mADFL%#@3', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
+        dbconnection = MySQLdb.connect(user='mysql', passwd='TOPKEK', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
     except MySQLdb.Error as err:
         print(err)
     else:
@@ -133,21 +136,21 @@ def onion_scan():
                     parsedcontents = BeautifulSoup(contents)
                 except:
                     parsedcontents = contents
+                pagetitle = ""
+                if (parsedcontents.title is None) or (parsedcontents.title == ""):  # | (parsedcontents.title.string=="") | (parsedcontents.title.string is None):
                     pagetitle = ""
-                    if (parsedcontents.title is None) | (parsedcontents.title == ""):  # | (parsedcontents.title.string=="") | (parsedcontents.title.string is None):
-                        pagetitle = ""
-                    else:
-                        pagetitle = parsedcontents.title.string
-                        # (  print pagetitle.encode('utf-8'))
-                        data_onionscan = (
-                            onion_addr[0],
-                            'true',
-                            contents,
-                            pagetitle,
-                            contenthash)
-                        print(data_onionscan)
-                        dbcursor.execute(add_onionscan, data_onionscan)
-                        dbconnection.commit()
+                else:
+                    pagetitle = parsedcontents.title.string
+                    # (  print pagetitle.encode('utf-8'))
+                data_onionscan = (
+                    onion_addr[0],
+                    'true',
+                    contents,
+                    pagetitle,
+                    contenthash)
+                print(data_onionscan)
+                dbcursor.execute(add_onionscan, data_onionscan)
+                dbconnection.commit()
             else:
                 print("Content unreachable")
                 data_onionscan = (
@@ -161,6 +164,45 @@ def onion_scan():
                 dbconnection.close()
 
 
-main()
+def parsePage(url):
+    print("----------------------")
+    onionurl = "http://" + url + ".onion"
+    print("Parsing: " + onionurl)
+    contents = fetch_hs(onionurl)
+    if contents != "unreachable":
+        contenthash = test_hash(contents)
+        print("Success")
+        parsedcontents = contents
+        try:
+            parsedcontents = BeautifulSoup(contents)
+        except:
+            parsedcontents = contents
+        pagetitle = ""
+        if (parsedcontents.title is None) or (parsedcontents.title == ""):  # | (parsedcontents.title.string=="") | (parsedcontents.title.string is None):
+            pagetitle = ""
+        else:
+            pagetitle = parsedcontents.title.string
+            # (  print pagetitle.encode('utf-8'))
+        data_onionscan = (
+            url,
+            'true',
+            contents,
+            pagetitle,
+            contenthash)
+        print(data_onionscan)
+    else:
+        print("Content unreachable")
+        data_onionscan = (
+            url,
+            'false',
+            contents, '', '')
+        print(data_onionscan)
 
-# find why http://fvtddif4bucpdsxx.onion doesn't work
+
+main()
+# parsePage("fvtddif4bucpdsxx")
+
+# The reason that http://fvtddif4bucpdsxx.onion is simple - urllib2 doesnt have
+# connection keep-alive, only close and i assume that this is the reason for
+# this specific onion not to send the page. Requests use urllib3 which has
+# keep-alive option and which is used by default in Requests

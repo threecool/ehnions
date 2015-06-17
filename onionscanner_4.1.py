@@ -3,8 +3,11 @@ import getopt
 import re
 import hashlib
 import urllib2
+# unused
 from requests.auth import HTTPBasicAuth  # apt-get install python-requests
 import MySQLdb  # apt-get install python-MySQLdb
+
+from optparse import OptionParser
 import socket
 import socks  # socksipy
 from BeautifulSoup import BeautifulSoup
@@ -32,13 +35,9 @@ def main():
                 print("Usage: %s -i onionlist" % sys.argv[0])
                 print("onionlost MUST CONTAIN one onion per line, without the .onion in the address")
                 print("Use no arguments to run the standard onion scan")
-        onion_scan()
-    except IOError as e:
-        print ("Error opening file: {0}".format(e.strerror))
-    except MySQLdb.Error as err:
-        print ("Error opening Database: {0}".format(err.strerror))
-    except:
-        print ("Unknown exception")
+                onion_scan()
+    except Exception:
+        pass
 
 
 def fetch_hs(addr):
@@ -64,54 +63,55 @@ def fetch_hs(addr):
 
 def test_hash(s):
     sha = hashlib.sha512(s).hexdigest()
-    # print 'Hash(' + str(len(s)) +") = ",sha
+    # print('Hash(' + str(len(s)) +") = ", sha)
     if sha == PAGE_HASH:
-        print("MATCH", s)
+        print("MATCH", s, )
         exit()
     return sha
 
 
 def load_onions(inputfile):
-    regex = re.compile("([a-z2-7]){16}")
     add_onion = """INSERT INTO tblCollectedOnions
-                                    (onion_addr, source)
-                                    VALUES(%s, %s)"""
+    (onion_addr, source)
+    VALUES(%s, %s)"""
     try:
         print('Connecting to DB')
         sslopts = {'cert': '/opt/mysql/newcerts/client-cert.pem', 'key': '/opt/mysql/newcerts/client-key.pem'}
-        dbconnection = MySQLdb.connect(user='mysql', passwd='jk3mADFL%#@3', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
+        dbconnection = MySQLdb.connect(user='mysql', passwd='jk3mADFL%# @3', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
     except MySQLdb.Error as err:
         print(err)
     else:
         print('Establishing cursor')
         dbcursor = dbconnection.cursor()
-        try:
-            print('Opening File %s ...' % inputfile)
-            onion_addrs = ''
-            with open(inputfile, "r+") as onionlist:
-                print('file opened successfully')
-                onion_addrs = onionlist.readlines()
-            for onion_addr in onion_addrs:
+        print('Inserting New Onions...')
+        regex = re.compile("^([a-z2-7]){16}$")
+        infile = open(inputfile, "r+")
+        with open(infile, "r+") as onionlist:
+            onion_addr = onionlist.read()
+            if not onion_addr:
+                onionlist.close()
+# ## ## FIXME U FOKN WOT M8?! THERE AINT NO LOOP IN HERE INNIT
+                # break  # Don't capture blank line
+            else:
                 if regex.match(onion_addr):
                     data_onion = (onion_addr, inputfile)
                     dbcursor.execute(add_onion, data_onion)
                     dbconnection.commit()
-                    onionlist.close()
-            dbcursor.close()
-            dbconnection.close()
-        except:
-            print("Error opening " .inputfile)
+            onionlist.close()
+        infile.close()
+        dbcursor.close()
+        dbconnection.close()
 
 
 def onion_scan():
     add_onionscan = """INSERT INTO tblOnionScan
-                                    (onion_addr, working, contents,title,sha1_hash)
-                                    VALUES(%s, %s, %s,%s,%s)"""
+                        (onion_addr, working, contents, title, sha1_hash)
+                        VALUES(%s, %s, %s, %s, %s)"""
 
     try:
         print('Connecting to DB')
         sslopts = {'cert': '/opt/mysql/newcerts/client-cert.pem', 'key': '/opt/mysql/newcerts/client-key.pem'}
-        dbconnection = MySQLdb.connect(user='mysql', passwd='jk3mADFL%#@3', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
+        dbconnection = MySQLdb.connect(user='mysql', passwd='jk3mADFL%# @3', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
     except MySQLdb.Error as err:
         print(err)
     else:
@@ -133,21 +133,21 @@ def onion_scan():
                     parsedcontents = BeautifulSoup(contents)
                 except:
                     parsedcontents = contents
+                pagetitle = ""
+                if (parsedcontents.title is None) | (parsedcontents.title == ""):  # | (parsedcontents.title.string=="") | (parsedcontents.title.string is None):
                     pagetitle = ""
-                    if (parsedcontents.title is None) | (parsedcontents.title == ""):  # | (parsedcontents.title.string=="") | (parsedcontents.title.string is None):
-                        pagetitle = ""
-                    else:
-                        pagetitle = parsedcontents.title.string
-                        # (  print pagetitle.encode('utf-8'))
-                        data_onionscan = (
-                            onion_addr[0],
-                            'true',
-                            contents,
-                            pagetitle,
-                            contenthash)
-                        print(data_onionscan)
-                        dbcursor.execute(add_onionscan, data_onionscan)
-                        dbconnection.commit()
+                else:
+                    pagetitle = parsedcontents.title.string
+                #   print(pagetitle.encode('utf-8'))
+                data_onionscan = (
+                    onion_addr[0],
+                    'true',
+                    contents,
+                    pagetitle,
+                    contenthash)
+                print(data_onionscan)
+                dbcursor.execute(add_onionscan, data_onionscan)
+                dbconnection.commit()
             else:
                 print("Content unreachable")
                 data_onionscan = (
@@ -157,10 +157,86 @@ def onion_scan():
                 print(data_onionscan)
                 dbcursor.execute(add_onionscan, data_onionscan)
                 dbconnection.commit()
-                dbcursor.close()
-                dbconnection.close()
+        dbcursor.close()
+        dbconnection.close()
 
 
 main()
 
-# find why http://fvtddif4bucpdsxx.onion doesn't work
+
+# convert hostname to IP
+def convertHostnameToIP(hostname):
+    try:
+        # FIXME undef
+        ip = gethostbyname(hostname)
+        return ip
+    except Exception:
+        return None
+
+
+def connectTo(hostname, port):
+    try:
+        # FIXME undef
+        openSocket = socket(AF_INET, SOCK_STREAM)  # open TCP socket
+        openSocket.connect((hostname, port))
+        return openSocket
+    except:
+        openSocket.close()
+        return None
+
+
+def grabBanner(openSocket):
+    try:
+        openSocket.send("Raise your banners!\r\n")
+        banner = openSocket.recv(2048)
+        return banner
+    except:
+        return None
+
+
+def scanHost(hostname, port):
+    openSocket = connectTo(hostname, port)
+    # FIXME undef
+    setdefaulttimeout(10)
+    if openSocket:
+        print("[+](Connected to %s:%d" % (host, port))
+        banner = grabBanner(openSocket)
+        if banner:
+            print(("[+] Banner: %s" % banner))
+        else:
+            print(("[!] Can't grab the target banner"))
+        openSocket.close()
+    else:
+        print("[!](Can't connect to %s:%d" % (host, port))
+
+
+# MOdify
+
+if __name__ == "__main__":
+    parser = OptionParser()
+    parser.add_option("-t", "--target", dest="host", type="string",
+                      help="enter host name", metavar="exemple.com")
+    parser.add_option("-p", "--port", dest="ports", type="string",
+                      help="port you want to scan separated by comma", metavar="PORT")
+
+    (options, args) = parser.parse_args()
+
+    if options.host is None or options.ports is None:
+        parser.print_help()
+    else:
+        host = options.host
+        ports = (options.ports).split(", ")
+        try:
+            ports = list(filter(int, ports))  # Store ports into list
+            # FIXME undef
+            ip = h2ip(host)  # Domain name to IP
+            if ip:
+                print("[+] Running scan on %s" % host)
+                print("[+] Target IP: %s" % ip)
+                for port in ports:
+                    # FIXME undef
+                    scan(host, int(port))
+            else:
+                print("[!] Invalid host")
+        except:
+            print("[!] Invalid port list (e.g: -p 21, 22, 53, ..)")

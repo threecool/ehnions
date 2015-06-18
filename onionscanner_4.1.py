@@ -2,11 +2,12 @@ import sys
 import getopt
 import re
 import hashlib
-# in python3 urllib2 is divided into 2 different libs
-# import urllib2
-# from requests.auth import HTTPBasicAuth  # apt-get install python-requests
-import requests
+import urllib2
+# unused
+from requests.auth import HTTPBasicAuth  # apt-get install python-requests
 import MySQLdb  # apt-get install python-MySQLdb
+
+from optparse import OptionParser
 import socket
 import socks  # socksipy
 from BeautifulSoup import BeautifulSoup
@@ -34,13 +35,9 @@ def main():
                 print("Usage: %s -i onionlist" % sys.argv[0])
                 print("onionlost MUST CONTAIN one onion per line, without the .onion in the address")
                 print("Use no arguments to run the standard onion scan")
-        onion_scan()
-    except IOError as e:
-        print ("Error opening file: {0}".format(e.strerror))
-    except MySQLdb.Error as err:
-        print ("Error opening Database: {0}".format(err.strerror))
-    except:
-        print ("Unknown exception")
+                onion_scan()
+    except Exception:
+        pass
 
 
 def fetch_hs(addr):
@@ -51,16 +48,14 @@ def fetch_hs(addr):
         # opener = urllib.request.build_opener(handler)
         # urllib._urlopener = opener
         print('Trying to retrieve address')
-        response = requests.get(addr)  # urllib2.urlopen(addr)  # , urlencode({'user': 'user', 'password':'pass'})
-        print(response.request.headers)
-        print(response.headers)
+        response = urllib2.urlopen(addr)  # , urlencode({'user': 'user', 'password':'pass'})
         print('Opened URL')
-        document = response.content
-        # print(response.content)
-        # print(document)
+        print(response.info())
+        document = response.read()
+
+        print(document)
         return document
-    except Exception as e:
-        print(e)
+    except:
         print("cannot reach address\n")
         print("----------------------")
         return "unreachable"
@@ -68,53 +63,55 @@ def fetch_hs(addr):
 
 def test_hash(s):
     sha = hashlib.sha512(s).hexdigest()
-    # print 'Hash(' + str(len(s)) +") = ",sha
+    # print('Hash(' + str(len(s)) +") = ", sha)
     if sha == PAGE_HASH:
-        print("MATCH", s)
+        print("MATCH", s, )
         exit()
     return sha
 
 
 def load_onions(inputfile):
-    regex = re.compile("([a-z2-7]){16}")
     add_onion = """INSERT INTO tblCollectedOnions
-                                    (onion_addr, source)
-                                    VALUES(%s, %s)"""
+    (onion_addr, source)
+    VALUES(%s, %s)"""
     try:
         print('Connecting to DB')
         sslopts = {'cert': '/opt/mysql/newcerts/client-cert.pem', 'key': '/opt/mysql/newcerts/client-key.pem'}
-        dbconnection = MySQLdb.connect(user='mysql', passwd='TOPKEK', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
+        dbconnection = MySQLdb.connect(user='mysql', passwd='jk3mADFL%# @3', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
     except MySQLdb.Error as err:
         print(err)
     else:
         print('Establishing cursor')
         dbcursor = dbconnection.cursor()
-        try:
-            print('Opening File %s ...' % inputfile)
-            onion_addrs = ''
-            with open(inputfile, "r+") as onionlist:
-                print('file opened successfully')
-                onion_addrs = onionlist.readlines()
-            for onion_addr in onion_addrs:
+        print('Inserting New Onions...')
+        regex = re.compile("^([a-z2-7]){16}$")
+        infile = open(inputfile, "r+")
+        with open(infile, "r+") as onionlist:
+            onion_addr = onionlist.read()
+            if not onion_addr:
+                onionlist.close()
+# ## ## FIXME U FOKN WOT M8?! THERE AINT NO LOOP IN HERE INNIT
+                # break  # Don't capture blank line
+            else:
                 if regex.match(onion_addr):
                     data_onion = (onion_addr, inputfile)
                     dbcursor.execute(add_onion, data_onion)
                     dbconnection.commit()
-                    onionlist.close()
-            dbcursor.close()
-            dbconnection.close()
-        except:
-            print("Error opening " .inputfile)
+            onionlist.close()
+        infile.close()
+        dbcursor.close()
+        dbconnection.close()
 
 
 def onion_scan():
     add_onionscan = """INSERT INTO tblOnionScan
-                                    (onion_addr, working, contents,title,sha1_hash)
-                                    VALUES(%s, %s, %s,%s,%s)"""
+                        (onion_addr, working, contents, title, sha1_hash)
+                        VALUES(%s, %s, %s, %s, %s)"""
+
     try:
         print('Connecting to DB')
         sslopts = {'cert': '/opt/mysql/newcerts/client-cert.pem', 'key': '/opt/mysql/newcerts/client-key.pem'}
-        dbconnection = MySQLdb.connect(user='mysql', passwd='TOPKEK', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
+        dbconnection = MySQLdb.connect(user='mysql', passwd='jk3mADFL%# @3', db='scandb', unix_socket='/var/run/mysqld/mysqld.sock', ssl=sslopts)
     except MySQLdb.Error as err:
         print(err)
     else:
@@ -137,11 +134,11 @@ def onion_scan():
                 except:
                     parsedcontents = contents
                 pagetitle = ""
-                if (parsedcontents.title is None) or (parsedcontents.title == ""):  # | (parsedcontents.title.string=="") | (parsedcontents.title.string is None):
+                if (parsedcontents.title is None) | (parsedcontents.title == ""):  # | (parsedcontents.title.string=="") | (parsedcontents.title.string is None):
                     pagetitle = ""
                 else:
                     pagetitle = parsedcontents.title.string
-                    # (  print pagetitle.encode('utf-8'))
+                #   print(pagetitle.encode('utf-8'))
                 data_onionscan = (
                     onion_addr[0],
                     'true',
@@ -164,45 +161,82 @@ def onion_scan():
         dbconnection.close()
 
 
-def parsePage(url):
-    print("----------------------")
-    onionurl = "http://" + url + ".onion"
-    print("Parsing: " + onionurl)
-    contents = fetch_hs(onionurl)
-    if contents != "unreachable":
-        contenthash = test_hash(contents)
-        print("Success")
-        parsedcontents = contents
-        try:
-            parsedcontents = BeautifulSoup(contents)
-        except:
-            parsedcontents = contents
-        pagetitle = ""
-        if (parsedcontents.title is None) or (parsedcontents.title == ""):  # | (parsedcontents.title.string=="") | (parsedcontents.title.string is None):
-            pagetitle = ""
-        else:
-            pagetitle = parsedcontents.title.string
-            # (  print pagetitle.encode('utf-8'))
-        data_onionscan = (
-            url,
-            'true',
-            contents,
-            pagetitle,
-            contenthash)
-        print(data_onionscan)
-    else:
-        print("Content unreachable")
-        data_onionscan = (
-            url,
-            'false',
-            contents, '', '')
-        print(data_onionscan)
-
-
 main()
-# parsePage("fvtddif4bucpdsxx")
 
-# The reason that http://fvtddif4bucpdsxx.onion is simple - urllib2 doesnt have
-# connection keep-alive, only close and i assume that this is the reason for
-# this specific onion not to send the page. Requests use urllib3 which has
-# keep-alive option and which is used by default in Requests
+
+# convert hostname to IP
+def convertHostnameToIP(hostname):
+    try:
+        # FIXME undef
+        ip = gethostbyname(hostname)
+        return ip
+    except Exception:
+        return None
+
+
+def connectTo(hostname, port):
+    try:
+        # FIXME undef
+        openSocket = socket(AF_INET, SOCK_STREAM)  # open TCP socket
+        openSocket.connect((hostname, port))
+        return openSocket
+    except:
+        openSocket.close()
+        return None
+
+
+def grabBanner(openSocket):
+    try:
+        openSocket.send("Raise your banners!\r\n")
+        banner = openSocket.recv(2048)
+        return banner
+    except:
+        return None
+
+
+def scanHost(hostname, port):
+    openSocket = connectTo(hostname, port)
+    # FIXME undef
+    setdefaulttimeout(10)
+    if openSocket:
+        print("[+](Connected to %s:%d" % (host, port))
+        banner = grabBanner(openSocket)
+        if banner:
+            print(("[+] Banner: %s" % banner))
+        else:
+            print(("[!] Can't grab the target banner"))
+        openSocket.close()
+    else:
+        print("[!](Can't connect to %s:%d" % (host, port))
+
+
+# MOdify
+
+if __name__ == "__main__":
+    parser = OptionParser()
+    parser.add_option("-t", "--target", dest="host", type="string",
+                      help="enter host name", metavar="exemple.com")
+    parser.add_option("-p", "--port", dest="ports", type="string",
+                      help="port you want to scan separated by comma", metavar="PORT")
+
+    (options, args) = parser.parse_args()
+
+    if options.host is None or options.ports is None:
+        parser.print_help()
+    else:
+        host = options.host
+        ports = (options.ports).split(", ")
+        try:
+            ports = list(filter(int, ports))  # Store ports into list
+            # FIXME undef
+            ip = h2ip(host)  # Domain name to IP
+            if ip:
+                print("[+] Running scan on %s" % host)
+                print("[+] Target IP: %s" % ip)
+                for port in ports:
+                    # FIXME undef
+                    scan(host, int(port))
+            else:
+                print("[!] Invalid host")
+        except:
+            print("[!] Invalid port list (e.g: -p 21, 22, 53, ..)")
